@@ -7,6 +7,8 @@
 
 namespace yii\console\controllers;
 
+use yii\base\RichEvent;
+use yii\base\Migrator;
 use Yii;
 use yii\base\InvalidConfigException;
 use yii\console\Exception;
@@ -18,14 +20,11 @@ use yii\helpers\FileHelper;
  * BaseMigrateController is the base class for migrate controllers.
  *
  * @author Qiang Xue <qiang.xue@gmail.com>
+ * @author Deele <deele@tuta.io>
  * @since 2.0
  */
 abstract class BaseMigrateController extends Controller
 {
-    /**
-     * The name of the dummy migration that marks the beginning of the whole migration history.
-     */
-    const BASE_MIGRATION = 'm000000_000000_base';
 
     /**
      * @var string the default command action.
@@ -64,7 +63,10 @@ abstract class BaseMigrateController extends Controller
      * or a file path.
      */
     public $templateFile;
-
+    /**
+     * @var \common\helpers\Migrator
+     */
+    protected $_migrator;
 
     /**
      * @inheritdoc
@@ -88,24 +90,12 @@ abstract class BaseMigrateController extends Controller
     public function beforeAction($action)
     {
         if (parent::beforeAction($action)) {
-            if (empty($this->migrationNamespaces) && empty($this->migrationPath)) {
-                throw new InvalidConfigException('At least one of `migrationPath` or `migrationNamespaces` should be specified.');
-            }
-
-            foreach ($this->migrationNamespaces as $key => $value) {
-                $this->migrationNamespaces[$key] = trim($value, '\\');
-            }
-
-            if ($this->migrationPath !== null) {
-                $path = Yii::getAlias($this->migrationPath);
-                if (!is_dir($path)) {
-                    if ($action->id !== 'create') {
-                        throw new InvalidConfigException("Migration failed. Directory specified in migrationPath doesn't exist: {$this->migrationPath}");
-                    }
-                    FileHelper::createDirectory($path);
-                }
-                $this->migrationPath = $path;
-            }
+            $this->_migrator = new Migrator([
+                'migrationNamespaces' => $this->migrationNamespaces,
+                'migrationPath' => $this->migrationPath,
+                'templateFile' => $this->templateFile,
+            ]);
+            $this->_migrator->ensureMigrationLocations($action->id !== 'create');
 
             $version = Yii::getVersion();
             $this->stdout("Yii Migration Tool (based on Yii v{$version})\n\n");
@@ -132,46 +122,50 @@ abstract class BaseMigrateController extends Controller
      */
     public function actionUp($limit = 0)
     {
-        $migrations = $this->getNewMigrations();
-        if (empty($migrations)) {
-            $this->stdout("No new migrations found. Your system is up-to-date.\n", Console::FG_GREEN);
+        $this->_migrator->on(
+            Migrator::EVENT_BEFORE_UPGRADE,
+            function (RichEvent $event) {
+                $n = $event->contextData['count'];
+                $total = $event->contextData['totalCount'];
+                if ($n === $total) {
+                    $this->stdout("Total $n new " . ($n === 1 ? 'migration' : 'migrations') . " to be applied:\n", Console::FG_YELLOW);
+                } else {
+                    $this->stdout("Total $n out of $total new " . ($total === 1 ? 'migration' : 'migrations') . " to be applied:\n", Console::FG_YELLOW);
+                }
 
-            return self::EXIT_CODE_NORMAL;
-        }
+                foreach ($event->contextData['migrations'] as $migration) {
+                    $this->stdout("\t$migration\n");
+                }
+                $this->stdout("\n");
 
-        $total = count($migrations);
-        $limit = (int) $limit;
-        if ($limit > 0) {
-            $migrations = array_slice($migrations, 0, $limit);
-        }
+                $event->contextData['runUpgrade'] = $this->confirm('Apply the above ' . ($n === 1 ? 'migration' : 'migrations') . '?');
+            }
+        );
 
-        $n = count($migrations);
-        if ($n === $total) {
-            $this->stdout("Total $n new " . ($n === 1 ? 'migration' : 'migrations') . " to be applied:\n", Console::FG_YELLOW);
-        } else {
-            $this->stdout("Total $n out of $total new " . ($total === 1 ? 'migration' : 'migrations') . " to be applied:\n", Console::FG_YELLOW);
-        }
-
-        foreach ($migrations as $migration) {
-            $this->stdout("\t$migration\n");
-        }
-        $this->stdout("\n");
-
-        $applied = 0;
-        if ($this->confirm('Apply the above ' . ($n === 1 ? 'migration' : 'migrations') . '?')) {
-            foreach ($migrations as $migration) {
-                if (!$this->migrateUp($migration)) {
+        $this->_migrator->on(
+            Migrator::EVENT_AFTER_UPGRADE,
+            function (RichEvent $event) {
+                $n = $event->contextData['count'];
+                if ($event->contextData['success'] == false) {
+                    $applied = $event->contextData['applied'];
                     $this->stdout("\n$applied from $n " . ($applied === 1 ? 'migration was' : 'migrations were') ." applied.\n", Console::FG_RED);
                     $this->stdout("\nMigration failed. The rest of the migrations are canceled.\n", Console::FG_RED);
-
-                    return self::EXIT_CODE_ERROR;
                 }
-                $applied++;
-            }
 
-            $this->stdout("\n$n " . ($n === 1 ? 'migration was' : 'migrations were') ." applied.\n", Console::FG_GREEN);
-            $this->stdout("\nMigrated up successfully.\n", Console::FG_GREEN);
+                $this->stdout("\n$n " . ($n === 1 ? 'migration was' : 'migrations were') ." applied.\n", Console::FG_GREEN);
+                $this->stdout("\nMigrated up successfully.\n", Console::FG_GREEN);
+            }
+        );
+
+        $upgrade = $this->_migrator->upgrade($limit);
+        if ($upgrade === false) {
+            return self::EXIT_CODE_ERROR;
         }
+        elseif (is_null($upgrade)) {
+            $this->stdout("No new migrations found. Your system is up-to-date.\n", Console::FG_GREEN);
+        }
+
+        return self::EXIT_CODE_NORMAL;
     }
 
     /**
