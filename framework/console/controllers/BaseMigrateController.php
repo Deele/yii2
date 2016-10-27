@@ -107,6 +107,70 @@ abstract class BaseMigrateController extends Controller
     }
 
     /**
+     * Sets up migrator event handlers for upgrade
+     */
+    protected function prepareUpgradeHandlers()
+    {
+        $this->_migrator->on(
+            Migrator::EVENT_BEFORE_UPGRADE,
+            function (RichEvent $event) {
+                $n = $event->getContextData('count');
+                $total = $event->getContextData('totalCount');
+                if ($n === $total) {
+                    $this->stdout("Total $n new " . ($n === 1 ? 'migration' : 'migrations') . " to be applied:\n", Console::FG_YELLOW);
+                } else {
+                    $this->stdout("Total $n out of $total new " . ($total === 1 ? 'migration' : 'migrations') . " to be applied:\n", Console::FG_YELLOW);
+                }
+
+                foreach ($event->getContextData('migrations') as $migration) {
+                    $this->stdout("\t$migration\n");
+                }
+                $this->stdout("\n");
+
+                $event->contextData['runUpgrade'] = $this->confirm('Apply the above ' . ($n === 1 ? 'migration' : 'migrations') . '?');
+            }
+        );
+
+        $this->_migrator->on(
+            Migrator::EVENT_BEFORE_MIGRATE_UPGRADE,
+            function (RichEvent $event) {
+                $class = $event->getContextData('class');
+                $this->stdout("*** applying $class\n", Console::FG_YELLOW);
+            }
+        );
+
+        $this->_migrator->on(
+            Migrator::EVENT_AFTER_UPGRADE,
+            function (RichEvent $event) {
+                $n = $event->getContextData('count');
+                if ($event->getContextData('success', false)) {
+                    $this->stdout("\n$n " . ($n === 1 ? 'migration was' : 'migrations were') ." applied.\n", Console::FG_GREEN);
+                    $this->stdout("\nMigrated up successfully.\n", Console::FG_GREEN);
+                }
+                else {
+                    $applied = $event->getContextData('applied');
+                    $this->stdout("\n$applied from $n " . ($applied === 1 ? 'migration was' : 'migrations were') ." applied.\n", Console::FG_RED);
+                    $this->stdout("\nMigration failed. The rest of the migrations are canceled.\n", Console::FG_RED);
+                }
+            }
+        );
+
+        $this->_migrator->on(
+            Migrator::EVENT_AFTER_MIGRATE_DOWNGRADE,
+            function (RichEvent $event) {
+                $class = $event->getContextData('class');
+                $time = $event->getContextData('end') - $event->getContextData('start');
+                if ($event->getContextData('success')) {
+                    $this->stdout("*** applied $class (time: " . sprintf('%.3f', $time) . "s)\n\n", Console::FG_GREEN);
+                }
+                else {
+                    $this->stdout("*** failed to apply $class (time: " . sprintf('%.3f', $time) . "s)\n\n", Console::FG_RED);
+                }
+            }
+        );
+    }
+
+    /**
      * Upgrades the application by applying new migrations.
      * For example,
      *
@@ -122,41 +186,7 @@ abstract class BaseMigrateController extends Controller
      */
     public function actionUp($limit = 0)
     {
-        $this->_migrator->on(
-            Migrator::EVENT_BEFORE_UPGRADE,
-            function (RichEvent $event) {
-                $n = $event->contextData['count'];
-                $total = $event->contextData['totalCount'];
-                if ($n === $total) {
-                    $this->stdout("Total $n new " . ($n === 1 ? 'migration' : 'migrations') . " to be applied:\n", Console::FG_YELLOW);
-                } else {
-                    $this->stdout("Total $n out of $total new " . ($total === 1 ? 'migration' : 'migrations') . " to be applied:\n", Console::FG_YELLOW);
-                }
-
-                foreach ($event->contextData['migrations'] as $migration) {
-                    $this->stdout("\t$migration\n");
-                }
-                $this->stdout("\n");
-
-                $event->contextData['runUpgrade'] = $this->confirm('Apply the above ' . ($n === 1 ? 'migration' : 'migrations') . '?');
-            }
-        );
-
-        $this->_migrator->on(
-            Migrator::EVENT_AFTER_UPGRADE,
-            function (RichEvent $event) {
-                $n = $event->contextData['count'];
-                if ($event->contextData['success'] == false) {
-                    $applied = $event->contextData['applied'];
-                    $this->stdout("\n$applied from $n " . ($applied === 1 ? 'migration was' : 'migrations were') ." applied.\n", Console::FG_RED);
-                    $this->stdout("\nMigration failed. The rest of the migrations are canceled.\n", Console::FG_RED);
-                }
-
-                $this->stdout("\n$n " . ($n === 1 ? 'migration was' : 'migrations were') ." applied.\n", Console::FG_GREEN);
-                $this->stdout("\nMigrated up successfully.\n", Console::FG_GREEN);
-            }
-        );
-
+        $this->prepareUpgradeHandlers();
         $upgrade = $this->_migrator->upgrade($limit);
         if ($upgrade === false) {
             return self::EXIT_CODE_ERROR;
@@ -166,6 +196,64 @@ abstract class BaseMigrateController extends Controller
         }
 
         return self::EXIT_CODE_NORMAL;
+    }
+
+    /**
+     * Sets up event migrator handlers for downgrade
+     */
+    protected function prepareDowngradeHandlers()
+    {
+        $this->_migrator->on(
+            Migrator::EVENT_BEFORE_DOWNGRADE,
+            function (RichEvent $event) {
+                $n = $event->getContextData('count');
+                $this->stdout("Total $n " . ($n === 1 ? 'migration' : 'migrations') . " to be reverted:\n", Console::FG_YELLOW);
+                foreach ($event->getContextData('migrations') as $migration) {
+                    $this->stdout("\t$migration\n");
+                }
+                $this->stdout("\n");
+
+                $event->contextData['runDowngrade'] = $this->confirm('Revert the above ' . ($n === 1 ? 'migration' : 'migrations') . '?');
+            }
+        );
+
+        $this->_migrator->on(
+            Migrator::EVENT_BEFORE_MIGRATE_DOWNGRADE,
+            function (RichEvent $event) {
+                $class = $event->getContextData('class');
+                $this->stdout("*** reverting $class\n", Console::FG_YELLOW);
+            }
+        );
+
+        $this->_migrator->on(
+            Migrator::EVENT_AFTER_DOWNGRADE,
+            function (RichEvent $event) {
+                $n = $event->getContextData('count');
+                if ($event->getContextData('success')) {
+                    $this->stdout("\n$n " . ($n === 1 ? 'migration was' : 'migrations were') ." reverted.\n", Console::FG_GREEN);
+                    $this->stdout("\nMigrated down successfully.\n", Console::FG_GREEN);
+                }
+                else {
+                    $reverted = $event->getContextData('reverted');
+                    $this->stdout("\n$reverted from $n " . ($reverted === 1 ? 'migration was' : 'migrations were') ." reverted.\n", Console::FG_RED);
+                    $this->stdout("\nMigration failed. The rest of the migrations are canceled.\n", Console::FG_RED);
+                }
+            }
+        );
+
+        $this->_migrator->on(
+            Migrator::EVENT_AFTER_MIGRATE_DOWNGRADE,
+            function (RichEvent $event) {
+                $class = $event->getContextData('class');
+                $time = $event->getContextData('end') - $event->getContextData('start');
+                if ($event->getContextData('success')) {
+                    $this->stdout("*** reverted $class (time: " . sprintf('%.3f', $time) . "s)\n\n", Console::FG_GREEN);
+                }
+                else {
+                    $this->stdout("*** failed to revert $class (time: " . sprintf('%.3f', $time) . "s)\n\n", Console::FG_RED);
+                }
+            }
+        );
     }
 
     /**
@@ -195,37 +283,16 @@ abstract class BaseMigrateController extends Controller
             }
         }
 
-        $migrations = $this->getMigrationHistory($limit);
-
-        if (empty($migrations)) {
+        $this->prepareDowngradeHandlers();
+        $downgrade = $this->_migrator->downgrade($limit);
+        if ($downgrade === false) {
+            return self::EXIT_CODE_ERROR;
+        }
+        elseif (is_null($downgrade)) {
             $this->stdout("No migration has been done before.\n", Console::FG_YELLOW);
-
-            return self::EXIT_CODE_NORMAL;
         }
 
-        $migrations = array_keys($migrations);
-
-        $n = count($migrations);
-        $this->stdout("Total $n " . ($n === 1 ? 'migration' : 'migrations') . " to be reverted:\n", Console::FG_YELLOW);
-        foreach ($migrations as $migration) {
-            $this->stdout("\t$migration\n");
-        }
-        $this->stdout("\n");
-
-        $reverted = 0;
-        if ($this->confirm('Revert the above ' . ($n === 1 ? 'migration' : 'migrations') . '?')) {
-            foreach ($migrations as $migration) {
-                if (!$this->migrateDown($migration)) {
-                    $this->stdout("\n$reverted from $n " . ($reverted === 1 ? 'migration was' : 'migrations were') ." reverted.\n", Console::FG_RED);
-                    $this->stdout("\nMigration failed. The rest of the migrations are canceled.\n", Console::FG_RED);
-
-                    return self::EXIT_CODE_ERROR;
-                }
-                $reverted++;
-            }
-            $this->stdout("\n$n " . ($n === 1 ? 'migration was' : 'migrations were') ." reverted.\n", Console::FG_GREEN);
-            $this->stdout("\nMigrated down successfully.\n", Console::FG_GREEN);
-        }
+        return self::EXIT_CODE_NORMAL;
     }
 
     /**
@@ -257,41 +324,46 @@ abstract class BaseMigrateController extends Controller
             }
         }
 
-        $migrations = $this->getMigrationHistory($limit);
+        $this->_migrator->on(
+            Migrator::EVENT_BEFORE_REDO,
+            function (RichEvent $event) {
+                $n = $event->getContextData('count');
+                $this->stdout("Total $n " . ($n === 1 ? 'migration' : 'migrations') . " to be redone:\n", Console::FG_YELLOW);
+                foreach ($event->getContextData('migrations') as $migration) {
+                    $this->stdout("\t$migration\n");
+                }
+                $this->stdout("\n");
 
-        if (empty($migrations)) {
+                $event->contextData['runRedo'] = $this->confirm('Redo the above ' . ($n === 1 ? 'migration' : 'migrations') . '?');
+            }
+        );
+
+        $this->_migrator->on(
+            Migrator::EVENT_AFTER_REDO,
+            function (RichEvent $event) {
+                $n = $event->getContextData('count');
+                if ($event->getContextData('success') == false) {
+                    $this->stdout("\nMigration failed. The rest of the migrations are canceled.\n", Console::FG_RED);
+                }
+                else {
+                    $this->stdout("\n$n " . ($n === 1 ? 'migration was' : 'migrations were') ." redone.\n", Console::FG_GREEN);
+                    $this->stdout("\nMigration redone successfully.\n", Console::FG_GREEN);
+                }
+
+            }
+        );
+
+        $this->prepareUpgradeHandlers();
+        $this->prepareDowngradeHandlers();
+        $redo = $this->_migrator->redo($limit);
+        if ($redo === false) {
+            return self::EXIT_CODE_ERROR;
+        }
+        elseif (is_null($redo)) {
             $this->stdout("No migration has been done before.\n", Console::FG_YELLOW);
-
-            return self::EXIT_CODE_NORMAL;
         }
 
-        $migrations = array_keys($migrations);
-
-        $n = count($migrations);
-        $this->stdout("Total $n " . ($n === 1 ? 'migration' : 'migrations') . " to be redone:\n", Console::FG_YELLOW);
-        foreach ($migrations as $migration) {
-            $this->stdout("\t$migration\n");
-        }
-        $this->stdout("\n");
-
-        if ($this->confirm('Redo the above ' . ($n === 1 ? 'migration' : 'migrations') . '?')) {
-            foreach ($migrations as $migration) {
-                if (!$this->migrateDown($migration)) {
-                    $this->stdout("\nMigration failed. The rest of the migrations are canceled.\n", Console::FG_RED);
-
-                    return self::EXIT_CODE_ERROR;
-                }
-            }
-            foreach (array_reverse($migrations) as $migration) {
-                if (!$this->migrateUp($migration)) {
-                    $this->stdout("\nMigration failed. The rest of the migrations are canceled.\n", Console::FG_RED);
-
-                    return self::EXIT_CODE_ERROR;
-                }
-            }
-            $this->stdout("\n$n " . ($n === 1 ? 'migration was' : 'migrations were') ." redone.\n", Console::FG_GREEN);
-            $this->stdout("\nMigration redone successfully.\n", Console::FG_GREEN);
-        }
+        return self::EXIT_CODE_NORMAL;
     }
 
     /**
@@ -320,16 +392,27 @@ abstract class BaseMigrateController extends Controller
      */
     public function actionTo($version)
     {
-        if (($namespaceVersion = $this->extractNamespaceMigrationVersion($version)) !== false) {
-            $this->migrateToVersion($namespaceVersion);
-        } elseif (($migrationName = $this->extractMigrationVersion($version)) !== false) {
-            $this->migrateToVersion($migrationName);
-        } elseif ((string) (int) $version == $version) {
-            $this->migrateToTime($version);
-        } elseif (($time = strtotime($version)) !== false) {
-            $this->migrateToTime($time);
-        } else {
+        $this->prepareUpgradeHandlers();
+        $this->prepareDowngradeHandlers();
+        try {
+            $to = $this->_migrator->to($version);
+        } catch (InvalidParamException $e) {
             throw new Exception("The version argument must be either a timestamp (e.g. 101129_185401),\n the full name of a migration (e.g. m101129_185401_create_user_table),\n the full namespaced name of a migration (e.g. app\\migrations\\M101129185401CreateUserTable),\n a UNIX timestamp (e.g. 1392853000), or a datetime string parseable\nby the strtotime() function (e.g. 2014-02-15 13:00:50).");
+        }
+
+        if (is_null($to)) {
+            list($type, $value) = $this->_migrator->parseVersionString($version);
+            switch ($type) {
+                case 'namespace':
+                case 'name':
+                    $this->stdout("Already at '$value'. Nothing needs to be done.\n", Console::FG_YELLOW);
+                    break;
+                case 'timestamp':
+                case 'time':
+                    $this->stdout("Nothing needs to be done.\n", Console::FG_GREEN);
+                    break;
+                default:
+            }
         }
     }
 
@@ -351,78 +434,31 @@ abstract class BaseMigrateController extends Controller
      */
     public function actionMark($version)
     {
-        $originalVersion = $version;
-        if (($namespaceVersion = $this->extractNamespaceMigrationVersion($version)) !== false) {
-            $version = $namespaceVersion;
-        } elseif (($migrationName = $this->extractMigrationVersion($version)) !== false) {
-            $version = $migrationName;
-        } else {
-            throw new Exception("The version argument must be either a timestamp (e.g. 101129_185401)\nor the full name of a migration (e.g. m101129_185401_create_user_table)\nor the full name of a namespaced migration (e.g. app\\migrations\\M101129185401CreateUserTable).");
-        }
-
-        // try mark up
-        $migrations = $this->getNewMigrations();
-        foreach ($migrations as $i => $migration) {
-            if (strpos($migration, $version) === 0) {
-                if ($this->confirm("Set migration history at $originalVersion?")) {
-                    for ($j = 0; $j <= $i; ++$j) {
-                        $this->addMigrationHistory($migrations[$j]);
-                    }
-                    $this->stdout("The migration history is set at $originalVersion.\nNo actual migration was performed.\n", Console::FG_GREEN);
-                }
-
-                return self::EXIT_CODE_NORMAL;
+        $this->_migrator->on(
+            Migrator::EVENT_BEFORE_MARK,
+            function (RichEvent $event) {
+                $originalVersion = $event->getContextData('originalVersion');
+                $event->contextData['runMark'] = $this->confirm("Set migration history at $originalVersion?");
             }
-        }
+        );
 
-        // try mark down
-        $migrations = array_keys($this->getMigrationHistory(null));
-        foreach ($migrations as $i => $migration) {
-            if (strpos($migration, $version) === 0) {
-                if ($i === 0) {
-                    $this->stdout("Already at '$originalVersion'. Nothing needs to be done.\n", Console::FG_YELLOW);
-                } else {
-                    if ($this->confirm("Set migration history at $originalVersion?")) {
-                        for ($j = 0; $j < $i; ++$j) {
-                            $this->removeMigrationHistory($migrations[$j]);
-                        }
-                        $this->stdout("The migration history is set at $originalVersion.\nNo actual migration was performed.\n", Console::FG_GREEN);
-                    }
-                }
-
-                return self::EXIT_CODE_NORMAL;
+        $this->_migrator->on(
+            Migrator::EVENT_AFTER_MARK,
+            function (RichEvent $event) {
+                $originalVersion = $event->getContextData('originalVersion');
+                $this->stdout("The migration history is set at $originalVersion.\nNo actual migration was performed.\n", Console::FG_GREEN);
             }
+        );
+
+        $mark = $this->_migrator->mark($version);
+        if ($mark === false) {
+            throw new Exception("Unable to find the version '$version'.");
+        }
+        elseif (is_null($mark)) {
+            $this->stdout("Already at '$version'. Nothing needs to be done.\n", Console::FG_YELLOW);
         }
 
-        throw new Exception("Unable to find the version '$originalVersion'.");
-    }
-
-    /**
-     * Checks if given migration version specification matches namespaced migration name.
-     * @param string $rawVersion raw version specification received from user input.
-     * @return string|false actual migration version, `false` - if not match.
-     * @since 2.0.10
-     */
-    private function extractNamespaceMigrationVersion($rawVersion)
-    {
-        if (preg_match('/^\\\\?([\w_]+\\\\)+m(\d{6}_?\d{6})(\D.*)?$/is', $rawVersion, $matches)) {
-            return trim($rawVersion, '\\');
-        }
-        return false;
-    }
-
-    /**
-     * Checks if given migration version specification matches migration base name.
-     * @param string $rawVersion raw version specification received from user input.
-     * @return string|false actual migration version, `false` - if not match.
-     * @since 2.0.10
-     */
-    private function extractMigrationVersion($rawVersion)
-    {
-        if (preg_match('/^m?(\d{6}_?\d{6})(\D.*)?$/is', $rawVersion, $matches)) {
-            return 'm' . $matches[1];
-        }
-        return false;
+        return self::EXIT_CODE_NORMAL;
     }
 
     /**
@@ -452,7 +488,7 @@ abstract class BaseMigrateController extends Controller
             }
         }
 
-        $migrations = $this->getMigrationHistory($limit);
+        $migrations = $this->_migrator->history($limit);
 
         if (empty($migrations)) {
             $this->stdout("No migration has been done before.\n", Console::FG_YELLOW);
@@ -496,7 +532,7 @@ abstract class BaseMigrateController extends Controller
             }
         }
 
-        $migrations = $this->getNewMigrations();
+        $migrations = $this->_migrator->newMigrations();
 
         if (empty($migrations)) {
             $this->stdout("No new migrations found. Your system is up-to-date.\n", Console::FG_GREEN);
@@ -548,293 +584,25 @@ abstract class BaseMigrateController extends Controller
      */
     public function actionCreate($name)
     {
-        if (!preg_match('/^[\w\\\\]+$/', $name)) {
+        $this->_migrator->on(
+            Migrator::EVENT_BEFORE_CREATE,
+            function (RichEvent $event) {
+                $file = $event->getContextData('file');
+                $event->contextData['runCreate'] = $this->confirm("Create new migration '$file'?");
+            }
+        );
+
+        $this->_migrator->on(
+            Migrator::EVENT_AFTER_CREATE,
+            function () {
+                $this->stdout("New migration created successfully.\n", Console::FG_GREEN);
+            }
+        );
+
+        try {
+            $this->_migrator->create($name);
+        } catch (InvalidParamException $e) {
             throw new Exception('The migration name should contain letters, digits, underscore and/or backslash characters only.');
         }
-
-        list($namespace, $className) = $this->generateClassName($name);
-        $migrationPath = $this->findMigrationPath($namespace);
-
-        $file = $migrationPath . DIRECTORY_SEPARATOR . $className . '.php';
-        if ($this->confirm("Create new migration '$file'?")) {
-            $content = $this->generateMigrationSourceCode([
-                'name' => $name,
-                'className' => $className,
-                'namespace' => $namespace,
-            ]);
-            FileHelper::createDirectory($migrationPath);
-            file_put_contents($file, $content);
-            $this->stdout("New migration created successfully.\n", Console::FG_GREEN);
-        }
     }
-
-    /**
-     * Generates class base name and namespace from migration name from user input.
-     * @param string $name migration name from user input.
-     * @return array list of 2 elements: 'namespace' and 'class base name'
-     * @since 2.0.10
-     */
-    private function generateClassName($name)
-    {
-        $namespace = null;
-        $name = trim($name, '\\');
-        if (strpos($name, '\\') !== false) {
-            $namespace = substr($name, 0, strrpos($name, '\\'));
-            $name = substr($name, strrpos($name, '\\') + 1);
-        } else {
-            if ($this->migrationPath === null) {
-                $migrationNamespaces = $this->migrationNamespaces;
-                $namespace = array_shift($migrationNamespaces);
-            }
-        }
-
-        if ($namespace === null) {
-            $class = 'm' . gmdate('ymd_His') . '_' . $name;
-        } else {
-            $class = 'M' . gmdate('ymdHis') . ucfirst($name);
-        }
-
-        return [$namespace, $class];
-    }
-
-    /**
-     * Finds the file path for the specified migration namespace.
-     * @param string|null $namespace migration namespace.
-     * @return string migration file path.
-     * @throws Exception on failure.
-     * @since 2.0.10
-     */
-    private function findMigrationPath($namespace)
-    {
-        if (empty($namespace)) {
-            return $this->migrationPath;
-        }
-
-        if (!in_array($namespace, $this->migrationNamespaces, true)) {
-            throw new Exception("Namespace '{$namespace}' not found in `migrationNamespaces`");
-        }
-
-        return $this->getNamespacePath($namespace);
-    }
-
-    /**
-     * Returns the file path matching the give namespace.
-     * @param string $namespace namespace.
-     * @return string file path.
-     * @since 2.0.10
-     */
-    private function getNamespacePath($namespace)
-    {
-        return str_replace('/', DIRECTORY_SEPARATOR, Yii::getAlias('@' . str_replace('\\', '/', $namespace)));
-    }
-
-    /**
-     * Upgrades with the specified migration class.
-     * @param string $class the migration class name
-     * @return boolean whether the migration is successful
-     */
-    protected function migrateUp($class)
-    {
-        if ($class === self::BASE_MIGRATION) {
-            return true;
-        }
-
-        $this->stdout("*** applying $class\n", Console::FG_YELLOW);
-        $start = microtime(true);
-        $migration = $this->createMigration($class);
-        if ($migration->up() !== false) {
-            $this->addMigrationHistory($class);
-            $time = microtime(true) - $start;
-            $this->stdout("*** applied $class (time: " . sprintf('%.3f', $time) . "s)\n\n", Console::FG_GREEN);
-
-            return true;
-        } else {
-            $time = microtime(true) - $start;
-            $this->stdout("*** failed to apply $class (time: " . sprintf('%.3f', $time) . "s)\n\n", Console::FG_RED);
-
-            return false;
-        }
-    }
-
-    /**
-     * Downgrades with the specified migration class.
-     * @param string $class the migration class name
-     * @return boolean whether the migration is successful
-     */
-    protected function migrateDown($class)
-    {
-        if ($class === self::BASE_MIGRATION) {
-            return true;
-        }
-
-        $this->stdout("*** reverting $class\n", Console::FG_YELLOW);
-        $start = microtime(true);
-        $migration = $this->createMigration($class);
-        if ($migration->down() !== false) {
-            $this->removeMigrationHistory($class);
-            $time = microtime(true) - $start;
-            $this->stdout("*** reverted $class (time: " . sprintf('%.3f', $time) . "s)\n\n", Console::FG_GREEN);
-
-            return true;
-        } else {
-            $time = microtime(true) - $start;
-            $this->stdout("*** failed to revert $class (time: " . sprintf('%.3f', $time) . "s)\n\n", Console::FG_RED);
-
-            return false;
-        }
-    }
-
-    /**
-     * Creates a new migration instance.
-     * @param string $class the migration class name
-     * @return \yii\db\MigrationInterface the migration instance
-     */
-    protected function createMigration($class)
-    {
-        $class = trim($class, '\\');
-        if (strpos($class, '\\') === false) {
-            $file = $this->migrationPath . DIRECTORY_SEPARATOR . $class . '.php';
-            require_once($file);
-        }
-
-        return new $class();
-    }
-
-    /**
-     * Migrates to the specified apply time in the past.
-     * @param integer $time UNIX timestamp value.
-     */
-    protected function migrateToTime($time)
-    {
-        $count = 0;
-        $migrations = array_values($this->getMigrationHistory(null));
-        while ($count < count($migrations) && $migrations[$count] > $time) {
-            ++$count;
-        }
-        if ($count === 0) {
-            $this->stdout("Nothing needs to be done.\n", Console::FG_GREEN);
-        } else {
-            $this->actionDown($count);
-        }
-    }
-
-    /**
-     * Migrates to the certain version.
-     * @param string $version name in the full format.
-     * @return integer CLI exit code
-     * @throws Exception if the provided version cannot be found.
-     */
-    protected function migrateToVersion($version)
-    {
-        $originalVersion = $version;
-
-        // try migrate up
-        $migrations = $this->getNewMigrations();
-        foreach ($migrations as $i => $migration) {
-            if (strpos($migration, $version) === 0) {
-                $this->actionUp($i + 1);
-
-                return self::EXIT_CODE_NORMAL;
-            }
-        }
-
-        // try migrate down
-        $migrations = array_keys($this->getMigrationHistory(null));
-        foreach ($migrations as $i => $migration) {
-            if (strpos($migration, $version) === 0) {
-                if ($i === 0) {
-                    $this->stdout("Already at '$originalVersion'. Nothing needs to be done.\n", Console::FG_YELLOW);
-                } else {
-                    $this->actionDown($i);
-                }
-
-                return self::EXIT_CODE_NORMAL;
-            }
-        }
-
-        throw new Exception("Unable to find the version '$originalVersion'.");
-    }
-
-    /**
-     * Returns the migrations that are not applied.
-     * @return array list of new migrations
-     */
-    protected function getNewMigrations()
-    {
-        $applied = [];
-        foreach ($this->getMigrationHistory(null) as $class => $time) {
-            $applied[trim($class, '\\')] = true;
-        }
-
-        $migrationPaths = [];
-        if (!empty($this->migrationPath)) {
-            $migrationPaths[''] = $this->migrationPath;
-        }
-        foreach ($this->migrationNamespaces as $namespace) {
-            $migrationPaths[$namespace] = $this->getNamespacePath($namespace);
-        }
-
-        $migrations = [];
-        foreach ($migrationPaths as $namespace => $migrationPath) {
-            if (!file_exists($migrationPath)) {
-                continue;
-            }
-            $handle = opendir($migrationPath);
-            while (($file = readdir($handle)) !== false) {
-                if ($file === '.' || $file === '..') {
-                    continue;
-                }
-                $path = $migrationPath . DIRECTORY_SEPARATOR . $file;
-                if (preg_match('/^(m(\d{6}_?\d{6})\D.*?)\.php$/is', $file, $matches) && is_file($path)) {
-                    $class = $matches[1];
-                    if (!empty($namespace)) {
-                        $class = $namespace . '\\' . $class;
-                    }
-                    $time = str_replace('_', '', $matches[2]);
-                    if (!isset($applied[$class])) {
-                        $migrations[$time . '\\' . $class] = $class;
-                    }
-                }
-            }
-            closedir($handle);
-        }
-        ksort($migrations);
-
-        return array_values($migrations);
-    }
-
-    /**
-     * Generates new migration source PHP code.
-     * Child class may override this method, adding extra logic or variation to the process.
-     * @param array $params generation parameters, usually following parameters are present:
-     *
-     *  - name: string migration base name
-     *  - className: string migration class name
-     *
-     * @return string generated PHP code.
-     * @since 2.0.8
-     */
-    protected function generateMigrationSourceCode($params)
-    {
-        return $this->renderFile(Yii::getAlias($this->templateFile), $params);
-    }
-
-    /**
-     * Returns the migration history.
-     * @param integer $limit the maximum number of records in the history to be returned. `null` for "no limit".
-     * @return array the migration history
-     */
-    abstract protected function getMigrationHistory($limit);
-
-    /**
-     * Adds new migration entry to the history.
-     * @param string $version migration version name.
-     */
-    abstract protected function addMigrationHistory($version);
-
-    /**
-     * Removes existing migration from the history.
-     * @param string $version migration version name.
-     */
-    abstract protected function removeMigrationHistory($version);
 }
