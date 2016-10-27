@@ -758,9 +758,9 @@ abstract class BaseMigrator extends Component
      * For example,
      *
      * ```
-     * BaseMigrator::downgrade()      # revert the last migration
-     * BaseMigrator::downgrade(3)     # revert the last 3 migrations
-     * BaseMigrator::downgrade('all') # revert all migrations
+     * BaseMigrator::downgrade()     # revert the last migration
+     * BaseMigrator::downgrade(3)    # revert the last 3 migrations
+     * BaseMigrator::downgrade(null) # revert all migrations
      * ```
      *
      * @param integer $limit the number of migrations to be reverted. Defaults to 1,
