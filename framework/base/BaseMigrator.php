@@ -12,21 +12,69 @@ use yii\web\View;
  */
 abstract class BaseMigrator extends Component
 {
+    /**
+     * @event RichEvent an event raised right before executing a upgrade.
+     * You may set [[RichEvent::contextData]] array `runUpgrade` key value to be false to cancel the action execution.
+     */
     const EVENT_BEFORE_UPGRADE = 'beforeUpgrade';
+    /**
+     * @event RichEvent an event raised right after executing a upgrade.
+     */
     const EVENT_AFTER_UPGRADE = 'afterUpgrade';
+    /**
+     * @event RichEvent an event raised right before executing a migrate upgrade.
+     * You may set [[RichEvent::contextData]] array `runMigrateUpgrade` key value to be false to cancel the action execution.
+     */
     const EVENT_BEFORE_MIGRATE_UPGRADE = 'beforeMigrateUpgrade';
+    /**
+     * @event RichEvent an event raised right after executing a migrate upgrade.
+     */
     const EVENT_AFTER_MIGRATE_UPGRADE = 'afterMigrateUpgrade';
+    /**
+     * @event RichEvent an event raised right before executing a downgrade.
+     * You may set [[RichEvent::contextData]] array `runDowngrade` key value to be false to cancel the action execution.
+     */
     const EVENT_BEFORE_DOWNGRADE = 'beforeDowngrade';
+    /**
+     * @event RichEvent an event raised right after executing a downgrade.
+     */
     const EVENT_AFTER_DOWNGRADE = 'afterDowngrade';
+    /**
+     * @event RichEvent an event raised right before executing a migrate downgrade.
+     * You may set [[RichEvent::contextData]] array `runMigrateDowngrade` key value to be false to cancel the action execution.
+     */
     const EVENT_BEFORE_MIGRATE_DOWNGRADE = 'beforeMigrateDowngrade';
+    /**
+     * @event RichEvent an event raised right after executing a migrate downgrade.
+     */
     const EVENT_AFTER_MIGRATE_DOWNGRADE = 'afterMigrateDowngrade';
+    /**
+     * @event RichEvent an event raised right before executing a redo.
+     * You may set [[RichEvent::contextData]] array `runRedo` key value to be false to cancel the action execution.
+     */
     const EVENT_BEFORE_REDO = 'beforeRedo';
+    /**
+     * @event RichEvent an event raised right after executing a redo.
+     */
     const EVENT_AFTER_REDO = 'afterRedo';
+    /**
+     * @event RichEvent an event raised right before executing a mark.
+     * You may set [[RichEvent::contextData]] array `runMark` key value to be false to cancel the action execution.
+     */
     const EVENT_BEFORE_MARK = 'beforeMark';
+    /**
+     * @event RichEvent an event raised right after executing a mark.
+     */
     const EVENT_AFTER_MARK = 'afterMark';
+    /**
+     * @event RichEvent an event raised right before executing a create.
+     * You may set [[RichEvent::contextData]] array `runCreate` key value to be false to cancel the action execution.
+     */
     const EVENT_BEFORE_CREATE = 'beforeCreate';
+    /**
+     * @event RichEvent an event raised right after executing a create.
+     */
     const EVENT_AFTER_CREATE = 'afterCreate';
-
     /**
      * The name of the dummy migration that marks the beginning of the whole migration history.
      */
@@ -884,6 +932,28 @@ abstract class BaseMigrator extends Component
     }
 
     /**
+     * Parses version string to determine what type is it
+     *
+     * @param string $version
+     * @throws InvalidParamException if the version argument is invalid.
+     * @return array
+     */
+    public function parseVersionString($version)
+    {
+        if (($namespaceVersion = $this->extractNamespaceMigrationVersion($version)) !== false) {
+            return ['namespace', $namespaceVersion];
+        } elseif (($migrationName = $this->extractMigrationVersion($version)) !== false) {
+            return ['name', $migrationName];
+        } elseif ((string) (int) $version == $version) {
+            return ['timestamp', $version];
+        } elseif (($time = strtotime($version)) !== false) {
+            return ['time', $time];
+        } else {
+            throw new InvalidParamException('Invalid version');
+        }
+    }
+
+    /**
      * Upgrades or downgrades till the specified version.
      *
      * Can also downgrade versions to the certain apply time in the past by providing
@@ -905,22 +975,23 @@ abstract class BaseMigrator extends Component
      * that the application should be migrated to. This can be either the timestamp,
      * the full name of the migration, the UNIX timestamp, or the parseable datetime
      * string.
-     * @throws InvalidParamException if the version argument is invalid.
      * @return null|bool the status of the action. null means that there was nothing to do, bool means whether migrations was successful.
      */
     public function to($version)
     {
         $this->ensureMigrationLocations();
-        if (($namespaceVersion = $this->extractNamespaceMigrationVersion($version)) !== false) {
-            return $this->migrateToVersion($namespaceVersion);
-        } elseif (($migrationName = $this->extractMigrationVersion($version)) !== false) {
-            return $this->migrateToVersion($migrationName);
-        } elseif ((string) (int) $version == $version) {
-            return $this->migrateToTime($version);
-        } elseif (($time = strtotime($version)) !== false) {
-            return $this->migrateToTime($time);
-        } else {
-            throw new InvalidParamException('Invalid version');
+        list($type, $value) = $this->parseVersionString($version);
+        switch ($type) {
+            case 'namespace':
+            case 'name':
+                return $this->migrateToVersion($value);
+                break;
+            case 'timestamp':
+            case 'time':
+                return $this->migrateToTime($value);
+                break;
+            default:
+                return null;
         }
     }
 
@@ -944,13 +1015,7 @@ abstract class BaseMigrator extends Component
     {
         $this->ensureMigrationLocations();
         $originalVersion = $version;
-        if (($namespaceVersion = $this->extractNamespaceMigrationVersion($version)) !== false) {
-            $version = $namespaceVersion;
-        } elseif (($migrationName = $this->extractMigrationVersion($version)) !== false) {
-            $version = $migrationName;
-        } else {
-            throw new InvalidParamException('Invalid version');
-        }
+        $version = $this->parseVersionString($version)[1];
         $markStatus = [
             'originalVersion' => $originalVersion
         ];
