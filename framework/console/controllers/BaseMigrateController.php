@@ -7,9 +7,10 @@
 
 namespace yii\console\controllers;
 
-use yii\base\RichEvent;
-use yii\base\Migrator;
 use Yii;
+use yii\base\RichEvent;
+use yii\base\BaseMigrator;
+use yii\di\Instance;
 use yii\base\InvalidConfigException;
 use yii\console\Exception;
 use yii\console\Controller;
@@ -38,25 +39,6 @@ abstract class BaseMigrateController extends Controller
      * to disable usage of migrations that are not namespaced.
      */
     public $migrationPath = '@app/migrations';
-    /**
-     * @var array list of namespaces containing the migration classes.
-     *
-     * Migration namespaces should be resolvable as a path alias if prefixed with `@`, e.g. if you specify
-     * the namespace `app\migrations`, the code `Yii::getAlias('@app/migrations')` should be able to return
-     * the file path to the directory this namespace refers to.
-     *
-     * For example:
-     *
-     * ```php
-     * [
-     *     'app\migrations',
-     *     'some\extension\migrations',
-     * ]
-     * ```
-     *
-     * @since 2.0.10
-     */
-    public $migrationNamespaces = [];
     /**
      * @var string the template file for generating new migrations.
      * This can be either a path alias (e.g. "@app/migrations/template.php")
@@ -90,12 +72,7 @@ abstract class BaseMigrateController extends Controller
     public function beforeAction($action)
     {
         if (parent::beforeAction($action)) {
-            $this->_migrator = new Migrator([
-                'migrationNamespaces' => $this->migrationNamespaces,
-                'migrationPath' => $this->migrationPath,
-                'templateFile' => $this->templateFile,
-            ]);
-            $this->_migrator->ensureMigrationLocations($action->id !== 'create');
+            $this->_migrator = Instance::ensure($this->_migrator, BaseMigrator::className());
 
             $version = Yii::getVersion();
             $this->stdout("Yii Migration Tool (based on Yii v{$version})\n\n");
@@ -112,7 +89,7 @@ abstract class BaseMigrateController extends Controller
     protected function prepareUpgradeHandlers()
     {
         $this->_migrator->on(
-            Migrator::EVENT_BEFORE_UPGRADE,
+            BaseMigrator::EVENT_BEFORE_UPGRADE,
             function (RichEvent $event) {
                 $n = $event->getContextData('count');
                 $total = $event->getContextData('totalCount');
@@ -132,7 +109,7 @@ abstract class BaseMigrateController extends Controller
         );
 
         $this->_migrator->on(
-            Migrator::EVENT_BEFORE_MIGRATE_UPGRADE,
+            BaseMigrator::EVENT_BEFORE_MIGRATE_UPGRADE,
             function (RichEvent $event) {
                 $class = $event->getContextData('class');
                 $this->stdout("*** applying $class\n", Console::FG_YELLOW);
@@ -140,7 +117,7 @@ abstract class BaseMigrateController extends Controller
         );
 
         $this->_migrator->on(
-            Migrator::EVENT_AFTER_UPGRADE,
+            BaseMigrator::EVENT_AFTER_UPGRADE,
             function (RichEvent $event) {
                 $n = $event->getContextData('count');
                 if ($event->getContextData('success', false)) {
@@ -156,7 +133,7 @@ abstract class BaseMigrateController extends Controller
         );
 
         $this->_migrator->on(
-            Migrator::EVENT_AFTER_MIGRATE_DOWNGRADE,
+            BaseMigrator::EVENT_AFTER_MIGRATE_DOWNGRADE,
             function (RichEvent $event) {
                 $class = $event->getContextData('class');
                 $time = $event->getContextData('end') - $event->getContextData('start');
@@ -204,7 +181,7 @@ abstract class BaseMigrateController extends Controller
     protected function prepareDowngradeHandlers()
     {
         $this->_migrator->on(
-            Migrator::EVENT_BEFORE_DOWNGRADE,
+            BaseMigrator::EVENT_BEFORE_DOWNGRADE,
             function (RichEvent $event) {
                 $n = $event->getContextData('count');
                 $this->stdout("Total $n " . ($n === 1 ? 'migration' : 'migrations') . " to be reverted:\n", Console::FG_YELLOW);
@@ -218,7 +195,7 @@ abstract class BaseMigrateController extends Controller
         );
 
         $this->_migrator->on(
-            Migrator::EVENT_BEFORE_MIGRATE_DOWNGRADE,
+            BaseMigrator::EVENT_BEFORE_MIGRATE_DOWNGRADE,
             function (RichEvent $event) {
                 $class = $event->getContextData('class');
                 $this->stdout("*** reverting $class\n", Console::FG_YELLOW);
@@ -226,7 +203,7 @@ abstract class BaseMigrateController extends Controller
         );
 
         $this->_migrator->on(
-            Migrator::EVENT_AFTER_DOWNGRADE,
+            BaseMigrator::EVENT_AFTER_DOWNGRADE,
             function (RichEvent $event) {
                 $n = $event->getContextData('count');
                 if ($event->getContextData('success')) {
@@ -242,7 +219,7 @@ abstract class BaseMigrateController extends Controller
         );
 
         $this->_migrator->on(
-            Migrator::EVENT_AFTER_MIGRATE_DOWNGRADE,
+            BaseMigrator::EVENT_AFTER_MIGRATE_DOWNGRADE,
             function (RichEvent $event) {
                 $class = $event->getContextData('class');
                 $time = $event->getContextData('end') - $event->getContextData('start');
@@ -325,7 +302,7 @@ abstract class BaseMigrateController extends Controller
         }
 
         $this->_migrator->on(
-            Migrator::EVENT_BEFORE_REDO,
+            BaseMigrator::EVENT_BEFORE_REDO,
             function (RichEvent $event) {
                 $n = $event->getContextData('count');
                 $this->stdout("Total $n " . ($n === 1 ? 'migration' : 'migrations') . " to be redone:\n", Console::FG_YELLOW);
@@ -339,7 +316,7 @@ abstract class BaseMigrateController extends Controller
         );
 
         $this->_migrator->on(
-            Migrator::EVENT_AFTER_REDO,
+            BaseMigrator::EVENT_AFTER_REDO,
             function (RichEvent $event) {
                 $n = $event->getContextData('count');
                 if ($event->getContextData('success') == false) {
@@ -435,7 +412,7 @@ abstract class BaseMigrateController extends Controller
     public function actionMark($version)
     {
         $this->_migrator->on(
-            Migrator::EVENT_BEFORE_MARK,
+            BaseMigrator::EVENT_BEFORE_MARK,
             function (RichEvent $event) {
                 $originalVersion = $event->getContextData('originalVersion');
                 $event->contextData['runMark'] = $this->confirm("Set migration history at $originalVersion?");
@@ -443,7 +420,7 @@ abstract class BaseMigrateController extends Controller
         );
 
         $this->_migrator->on(
-            Migrator::EVENT_AFTER_MARK,
+            BaseMigrator::EVENT_AFTER_MARK,
             function (RichEvent $event) {
                 $originalVersion = $event->getContextData('originalVersion');
                 $this->stdout("The migration history is set at $originalVersion.\nNo actual migration was performed.\n", Console::FG_GREEN);
@@ -585,7 +562,7 @@ abstract class BaseMigrateController extends Controller
     public function actionCreate($name)
     {
         $this->_migrator->on(
-            Migrator::EVENT_BEFORE_CREATE,
+            BaseMigrator::EVENT_BEFORE_CREATE,
             function (RichEvent $event) {
                 $file = $event->getContextData('file');
                 $event->contextData['runCreate'] = $this->confirm("Create new migration '$file'?");
@@ -593,7 +570,7 @@ abstract class BaseMigrateController extends Controller
         );
 
         $this->_migrator->on(
-            Migrator::EVENT_AFTER_CREATE,
+            BaseMigrator::EVENT_AFTER_CREATE,
             function () {
                 $this->stdout("New migration created successfully.\n", Console::FG_GREEN);
             }
