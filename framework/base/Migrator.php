@@ -14,7 +14,14 @@ use yii\helpers\ArrayHelper;
  */
 class Migrator extends BaseMigrator
 {
+    /**
+     * @event RichEvent an event raised right before executing a history table creation.
+     * You may set [[RichEvent::contextData]] array `createHistoryTable` key value to be false to cancel the action execution.
+     */
     const EVENT_BEFORE_CREATE_HISTORY_TABLE = 'beforeCreateHistoryTable';
+    /**
+     * @event RichEvent an event raised right after executing a history table creation.
+     */
     const EVENT_AFTER_CREATE_HISTORY_TABLE = 'afterCreateHistoryTable';
 
     /**
