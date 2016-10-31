@@ -186,7 +186,7 @@ abstract class BaseMigrator extends Component
         $event = new RichEvent();
         $event->contextData = $migrateUpgradeStatus;
         $this->trigger(
-            self::EVENT_AFTER_MIGRATE_DOWNGRADE,
+            self::EVENT_AFTER_MIGRATE_UPGRADE,
             $event
         );
     }
@@ -256,7 +256,7 @@ abstract class BaseMigrator extends Component
         $event = new RichEvent();
         $event->contextData = $migrateDowngradeStatus;
         $this->trigger(
-            self::EVENT_AFTER_MIGRATE_UPGRADE,
+            self::EVENT_AFTER_MIGRATE_DOWNGRADE,
             $event
         );
     }
@@ -442,6 +442,7 @@ abstract class BaseMigrator extends Component
 
         $success = false;
         $migrateUpgradeStatus = [
+            'class' => $class,
             'start' => microtime(true)
         ];
         if ($this->beforeMigrateUpgrade($migrateUpgradeStatus)) {
@@ -471,6 +472,7 @@ abstract class BaseMigrator extends Component
 
         $success = false;
         $migrateDowngradeStatus = [
+            'class' => $class,
             'start' => microtime(true)
         ];
         if ($this->beforeMigrateDowngrade($migrateDowngradeStatus)) {
@@ -770,13 +772,12 @@ abstract class BaseMigrator extends Component
         $limit = (int) $limit;
         $upgradeStatus = [
             'limit' => $limit,
-            'totalCount' => count($migrations),
-            'migrations' => $migrations
+            'totalCount' => count($migrations)
         ];
         if ($limit > 0) {
             $migrations = array_slice($migrations, 0, $limit);
         }
-
+        $upgradeStatus['migrations'] = $migrations;
         $upgradeStatus['count'] = count($migrations);
         if ($this->beforeUpgrade($upgradeStatus)) {
             $success = true;
@@ -848,9 +849,9 @@ abstract class BaseMigrator extends Component
                     break;
                 }
             }
-            $upgradeStatus['reverted'] = $reverted;
-            $upgradeStatus['success'] = $success;
-            $this->afterUpgrade($downgradeStatus);
+            $downgradeStatus['reverted'] = $reverted;
+            $downgradeStatus['success'] = $success;
+            $this->afterDowngrade($downgradeStatus);
 
             return $success;
         }
