@@ -133,7 +133,7 @@ abstract class BaseMigrateController extends Controller
         );
 
         $this->_migrator->on(
-            BaseMigrator::EVENT_AFTER_MIGRATE_DOWNGRADE,
+            BaseMigrator::EVENT_AFTER_MIGRATE_UPGRADE,
             function (RichEvent $event) {
                 $class = $event->getContextData('class');
                 $time = $event->getContextData('end') - $event->getContextData('start');
@@ -183,7 +183,7 @@ abstract class BaseMigrateController extends Controller
         $this->_migrator->on(
             BaseMigrator::EVENT_BEFORE_DOWNGRADE,
             function (RichEvent $event) {
-                $n = $event->getContextData('count');
+                $n = $event->getContextData('totalCount');
                 $this->stdout("Total $n " . ($n === 1 ? 'migration' : 'migrations') . " to be reverted:\n", Console::FG_YELLOW);
                 foreach ($event->getContextData('migrations') as $migration) {
                     $this->stdout("\t$migration\n");
@@ -205,7 +205,7 @@ abstract class BaseMigrateController extends Controller
         $this->_migrator->on(
             BaseMigrator::EVENT_AFTER_DOWNGRADE,
             function (RichEvent $event) {
-                $n = $event->getContextData('count');
+                $n = $event->getContextData('totalCount');
                 if ($event->getContextData('success')) {
                     $this->stdout("\n$n " . ($n === 1 ? 'migration was' : 'migrations were') ." reverted.\n", Console::FG_GREEN);
                     $this->stdout("\nMigrated down successfully.\n", Console::FG_GREEN);
@@ -304,7 +304,7 @@ abstract class BaseMigrateController extends Controller
         $this->_migrator->on(
             BaseMigrator::EVENT_BEFORE_REDO,
             function (RichEvent $event) {
-                $n = $event->getContextData('count');
+                $n = $event->getContextData('totalCount');
                 $this->stdout("Total $n " . ($n === 1 ? 'migration' : 'migrations') . " to be redone:\n", Console::FG_YELLOW);
                 foreach ($event->getContextData('migrations') as $migration) {
                     $this->stdout("\t$migration\n");
@@ -318,7 +318,7 @@ abstract class BaseMigrateController extends Controller
         $this->_migrator->on(
             BaseMigrator::EVENT_AFTER_REDO,
             function (RichEvent $event) {
-                $n = $event->getContextData('count');
+                $n = $event->getContextData('totalCount');
                 if ($event->getContextData('success') == false) {
                     $this->stdout("\nMigration failed. The rest of the migrations are canceled.\n", Console::FG_RED);
                 }
@@ -366,6 +366,8 @@ abstract class BaseMigrateController extends Controller
      * the full name of the migration, the UNIX timestamp, or the parseable datetime
      * string.
      * @throws Exception if the version argument is invalid.
+     *
+     * @return integer the status of the action execution. 0 means normal, other values mean abnormal.
      */
     public function actionTo($version)
     {
@@ -373,6 +375,10 @@ abstract class BaseMigrateController extends Controller
         $this->prepareDowngradeHandlers();
         try {
             $to = $this->_migrator->to($version);
+        } catch (\yii\base\Exception $e) {
+            $this->stdout("\n{$e->getMessage()}\n", Console::FG_RED);
+
+            return self::EXIT_CODE_ERROR;
         } catch (InvalidParamException $e) {
             throw new Exception("The version argument must be either a timestamp (e.g. 101129_185401),\n the full name of a migration (e.g. m101129_185401_create_user_table),\n the full namespaced name of a migration (e.g. app\\migrations\\M101129185401CreateUserTable),\n a UNIX timestamp (e.g. 1392853000), or a datetime string parseable\nby the strtotime() function (e.g. 2014-02-15 13:00:50).");
         }
@@ -391,6 +397,8 @@ abstract class BaseMigrateController extends Controller
                 default:
             }
         }
+
+        return self::EXIT_CODE_NORMAL;
     }
 
     /**
@@ -429,7 +437,9 @@ abstract class BaseMigrateController extends Controller
 
         $mark = $this->_migrator->mark($version);
         if ($mark === false) {
-            throw new Exception("Unable to find the version '$version'.");
+            $this->stdout("Unable to find the version '$version'.\n", Console::FG_RED);
+
+            return self::EXIT_CODE_ERROR;
         }
         elseif (is_null($mark)) {
             $this->stdout("Already at '$version'. Nothing needs to be done.\n", Console::FG_YELLOW);
@@ -583,3 +593,4 @@ abstract class BaseMigrateController extends Controller
         }
     }
 }
+    
