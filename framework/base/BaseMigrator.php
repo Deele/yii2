@@ -447,10 +447,13 @@ abstract class BaseMigrator extends Component
         ];
         if ($this->beforeMigrateUpgrade($migrateUpgradeStatus)) {
             $migration = $this->createMigration($class);
+            ob_start();
             if ($migration->up() !== false) {
                 $this->addMigrationHistory($class);
                 $success = true;
             }
+            $migrateUpgradeStatus['textOutput'] = ob_get_contents();
+            ob_end_clean();
             $migrateUpgradeStatus['success'] = $success;
             $migrateUpgradeStatus['end'] = microtime(true);
             $this->afterMigrateUpgrade($migrateUpgradeStatus);
@@ -477,10 +480,13 @@ abstract class BaseMigrator extends Component
         ];
         if ($this->beforeMigrateDowngrade($migrateDowngradeStatus)) {
             $migration = $this->createMigration($class);
+            ob_start();
             if ($migration->down() !== false) {
                 $this->removeMigrationHistory($class);
                 $success = true;
             }
+            $migrateUpgradeStatus['textOutput'] = ob_get_contents();
+            ob_end_clean();
             $migrateDowngradeStatus['success'] = $success;
             $migrateDowngradeStatus['end'] = microtime(true);
             $this->afterMigrateDowngrade($migrateDowngradeStatus);
