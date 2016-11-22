@@ -40,6 +40,25 @@ abstract class BaseMigrateController extends Controller
      */
     public $migrationPath = '@app/migrations';
     /**
+     * @var array list of namespaces containing the migration classes.
+     *
+     * Migration namespaces should be resolvable as a path alias if prefixed with `@`, e.g. if you specify
+     * the namespace `app\migrations`, the code `Yii::getAlias('@app/migrations')` should be able to return
+     * the file path to the directory this namespace refers to.
+     *
+     * For example:
+     *
+     * ```php
+     * [
+     *     'app\migrations',
+     *     'some\extension\migrations',
+     * ]
+     * ```
+     *
+     * @since 2.0.10
+     */
+    public $migrationNamespaces = [];
+    /**
      * @var string the template file for generating new migrations.
      * This can be either a path alias (e.g. "@app/migrations/template.php")
      * or a file path.
@@ -135,6 +154,10 @@ abstract class BaseMigrateController extends Controller
         $this->_migrator->on(
             BaseMigrator::EVENT_AFTER_MIGRATE_UPGRADE,
             function (RichEvent $event) {
+                $textOutput = $event->getContextData('textOutput');
+                if (strlen($textOutput) > 0) {
+                    $this->stdout($textOutput);
+                }
                 $class = $event->getContextData('class');
                 $time = $event->getContextData('end') - $event->getContextData('start');
                 if ($event->getContextData('success')) {
@@ -221,6 +244,10 @@ abstract class BaseMigrateController extends Controller
         $this->_migrator->on(
             BaseMigrator::EVENT_AFTER_MIGRATE_DOWNGRADE,
             function (RichEvent $event) {
+                $textOutput = $event->getContextData('textOutput');
+                if (strlen($textOutput) > 0) {
+                    $this->stdout($textOutput);
+                }
                 $class = $event->getContextData('class');
                 $time = $event->getContextData('end') - $event->getContextData('start');
                 if ($event->getContextData('success')) {
@@ -593,4 +620,3 @@ abstract class BaseMigrateController extends Controller
         }
     }
 }
-    
