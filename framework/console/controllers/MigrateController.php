@@ -146,6 +146,7 @@ class MigrateController extends BaseMigrateController
     {
         $this->_migrator = new Migrator([
             'migrationPath' => $this->migrationPath,
+            'migrationNamespaces' => $this->migrationNamespaces,
             'templateFile' => $this->templateFile,
             'migrationTable' => $this->migrationTable,
             'useTablePrefix' => $this->useTablePrefix,
