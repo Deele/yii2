@@ -67,14 +67,16 @@ window.yii = (function ($) {
          * @return string|undefined the CSRF parameter name. Undefined is returned if CSRF validation is not enabled.
          */
         getCsrfParam: function () {
-            return $('meta[name=csrf-param]').attr('content');
+            var element = document.querySelector('meta[name=csrf-param]');
+            return element ? element.content : undefined;
         },
 
         /**
          * @return string|undefined the CSRF token. Undefined is returned if CSRF validation is not enabled.
          */
         getCsrfToken: function () {
-            return $('meta[name=csrf-token]').attr('content');
+            var element = document.querySelector('meta[name=csrf-token]');
+            return element ? element.content : undefined;
         },
 
         /**
@@ -84,8 +86,12 @@ window.yii = (function ($) {
          * @param value the CSRF token value
          */
         setCsrfToken: function (name, value) {
-            $('meta[name=csrf-param]').attr('content', name);
-            $('meta[name=csrf-token]').attr('content', value);
+            var element = document.querySelector('meta[name=csrf-param]');
+            if (element)
+                element.content = name;
+            element = document.querySelector('meta[name=csrf-token]');
+            if (element)
+                element.content = value;
         },
 
         /**
@@ -95,7 +101,15 @@ window.yii = (function ($) {
         refreshCsrfToken: function () {
             var token = pub.getCsrfToken();
             if (token) {
-                $('form input[name="' + pub.getCsrfParam() + '"]').val(token);
+                Array.from(document.getElementsByName(pub.getCsrfParam())).forEach(
+
+                    /**
+                     * @param {object} element
+                     */
+                    function (element) {
+                        element.value = token;
+                    }
+                );
             }
         },
 
@@ -235,9 +249,10 @@ window.yii = (function ($) {
             }
 
             if (areValidParams) {
-                $.each(params, function (name, value) {
-                    $form.append($('<input/>').attr({name: name, value: value, type: 'hidden'}));
-                });
+                for (var name in params) {
+                    if (!params.hasOwnProperty(name)) continue;
+                    $form.append($('<input/>').attr({name: name, value: params[name], type: 'hidden'}));
+                }
             }
 
             if (usePjax) {
@@ -260,9 +275,10 @@ window.yii = (function ($) {
                 $form.attr('method', oldMethod);
 
                 if (areValidParams) {
-                    $.each(params, function (name) {
+                    for (var name in params) {
+                        if (!params.hasOwnProperty(name)) continue;
                         $('input[name="' + name + '"]', $form).remove();
-                    });
+                    }
                 }
             });
         },
@@ -273,7 +289,7 @@ window.yii = (function ($) {
                 return {};
             }
 
-            var pairs = $.grep(url.substring(pos + 1).split('#')[0].split('&'), function (value) {
+            var pairs = url.substring(pos + 1).split('#')[0].split('&').filter(function (value) {
                 return value !== '';
             });
             var params = {};
@@ -288,13 +304,12 @@ window.yii = (function ($) {
                 if (params[name] === undefined) {
                     params[name] = value || '';
                 } else {
-                    if (!$.isArray(params[name])) {
+                    if (!Array.isArray(params[name])) {
                         params[name] = [params[name]];
                     }
                     params[name].push(value || '');
                 }
             }
-
             return params;
         },
 
@@ -302,14 +317,15 @@ window.yii = (function ($) {
             if (module.isActive !== undefined && !module.isActive) {
                 return;
             }
-            if ($.isFunction(module.init)) {
+            if (typeof module.init === 'function') {
                 module.init();
             }
-            $.each(module, function () {
-                if ($.isPlainObject(this)) {
-                    pub.initModule(this);
+            for (var thatModule in module) {
+                if (!module.hasOwnProperty(thatModule)) continue;
+                if ($.isPlainObject(thatModule)) {
+                    pub.initModule(thatModule);
                 }
-            });
+            }
         },
 
         init: function () {
@@ -376,10 +392,16 @@ window.yii = (function ($) {
          */
         var loadedScripts = {};
 
-        $('script[src]').each(function () {
-            var url = getAbsoluteUrl(this.src);
-            loadedScripts[url] = true;
-        });
+        Array.from(document.querySelectorAll('script[src]')).forEach(
+
+            /**
+             * @param {object} element
+             */
+            function (element) {
+                var url = getAbsoluteUrl(element.src);
+                loadedScripts[url] = true;
+            }
+        );
 
         $.ajaxPrefilter('script', function (options, originalOptions, xhr) {
             if (options.dataType == 'jsonp') {
@@ -445,14 +467,19 @@ window.yii = (function ($) {
 
         $(document).ajaxComplete(function () {
             var styleSheets = [];
-            $('link[rel=stylesheet]').each(function () {
-                var url = getAbsoluteUrl(this.href);
-                if (isReloadableAsset(url)) {
-                    return;
-                }
+            Array.from(document.querySelectorAll('link[rel=stylesheet]')).forEach(
 
-                $.inArray(url, styleSheets) === -1 ? styleSheets.push(url) : $(this).remove();
-            });
+                /**
+                 * @param {object|Node} element
+                 */
+                function (element) {
+                    var url = getAbsoluteUrl(element.href);
+                    if (isReloadableAsset(url)) {
+                        return;
+                    }
+                    styleSheets.indexOf(url) === -1 ? styleSheets.push(url) : element.parentNode.removeChild(element);
+                }
+            );
         });
     }
 
