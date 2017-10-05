@@ -177,7 +177,7 @@ class AssetBundle extends Object
     }
 
     /**
-     * This method is called after publishing the bundle.
+     * This method is called before publishing the bundle.
      * The default implementation will trigger the [[EVENT_BEFORE_PUBLISH]] event.
      * If you override this method, make sure you call the parent implementation
      * so that the event is triggered.
@@ -193,7 +193,7 @@ class AssetBundle extends Object
     }
 
     /**
-     * This method is called before publishing the bundle.
+     * This method is called after publishing the bundle.
      * The default implementation will trigger the [[EVENT_AFTER_PUBLISH]] event.
      * If you override this method, make sure you call the parent implementation
      * so that the event is triggered.
