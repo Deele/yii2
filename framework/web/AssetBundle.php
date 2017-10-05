@@ -29,6 +29,9 @@ use Yii;
  */
 class AssetBundle extends Object
 {
+    const EVENT_BEFORE_PUBLISH = 'beforePublish';
+    const EVENT_AFTER_PUBLISH = 'afterPublish';
+
     /**
      * @var string the directory that contains the source asset files for this asset bundle.
      * A source asset file is a file that is part of your source code repository of your Web application.
@@ -174,6 +177,61 @@ class AssetBundle extends Object
     }
 
     /**
+     * This method is called after publishing the bundle.
+     * The default implementation will trigger the [[EVENT_BEFORE_PUBLISH]] event.
+     * If you override this method, make sure you call the parent implementation
+     * so that the event is triggered.
+     * @param AssetManager $am the asset manager to perform the asset publishing
+     */
+    protected function beforePublish($am)
+    {
+        $event = new AssetBundleEvent([
+            'assetBundle' => $this,
+            'assetManager' => $am,
+        ]);
+        AssetBundleEvent::trigger(AssetBundle::className(), self::EVENT_BEFORE_PUBLISH, $event);
+    }
+
+    /**
+     * This method is called before publishing the bundle.
+     * The default implementation will trigger the [[EVENT_AFTER_PUBLISH]] event.
+     * If you override this method, make sure you call the parent implementation
+     * so that the event is triggered.
+     * @param AssetManager $am the asset manager to perform the asset publishing
+     */
+    protected function afterPublish($am)
+    {
+        $event = new AssetBundleEvent([
+            'assetBundle' => $this,
+            'assetManager' => $am,
+        ]);
+        AssetBundleEvent::trigger(AssetBundle::className(), self::EVENT_AFTER_PUBLISH, $event);
+    }
+
+    /**
+     * @param AssetManager $am the asset manager to perform the asset publishing
+     * @param $files array
+     * @param $options array
+     * @param $basePath string
+     */
+    public static function publishFiles($am, &$files, $options, $basePath)
+    {
+        $converter = $am->getConverter();
+        foreach ($files as $i => $file) {
+            if (is_array($file)) {
+                $file = array_shift($file);
+                if (Url::isRelative($file)) {
+                    $file = ArrayHelper::merge($options, $file);
+                    array_unshift($file, $converter->convert($file, $basePath));
+                    $files[$i] = $file;
+                }
+            } elseif (Url::isRelative($file)) {
+                $files[$i] = $converter->convert($file, $basePath);
+            }
+        }
+    }
+
+    /**
      * Publishes the asset bundle if its source code is not under Web-accessible directory.
      * It will also try to convert non-CSS or JS files (e.g. LESS, Sass) into the corresponding
      * CSS or JS files using [[AssetManager::converter|asset converter]].
@@ -185,31 +243,11 @@ class AssetBundle extends Object
             list ($this->basePath, $this->baseUrl) = $am->publish($this->sourcePath, $this->publishOptions);
         }
 
-        if (isset($this->basePath, $this->baseUrl) && ($converter = $am->getConverter()) !== null) {
-            foreach ($this->js as $i => $js) {
-                if (is_array($js)) {
-                    $file = array_shift($js);
-                    if (Url::isRelative($file)) {
-                        $js = ArrayHelper::merge($this->jsOptions, $js);
-                        array_unshift($js, $converter->convert($file, $this->basePath));
-                        $this->js[$i] = $js;
-                    }
-                } elseif (Url::isRelative($js)) {
-                    $this->js[$i] = $converter->convert($js, $this->basePath);
-                }
-            }
-            foreach ($this->css as $i => $css) {
-                if (is_array($css)) {
-                    $file = array_shift($css);
-                    if (Url::isRelative($file)) {
-                        $css = ArrayHelper::merge($this->cssOptions, $css);
-                        array_unshift($css, $converter->convert($file, $this->basePath));
-                        $this->css[$i] = $css;
-                    }
-                } elseif (Url::isRelative($css)) {
-                    $this->css[$i] = $converter->convert($css, $this->basePath);
-                }
-            }
+        $this->beforePublish($am);
+        if (isset($this->basePath, $this->baseUrl) && $am->getConverter() !== null) {
+            $this->publishFiles($am, $this->js, $this->jsOptions, $this->basePath);
+            $this->publishFiles($am, $this->css, $this->cssOptions, $this->basePath);
+            $this->afterPublish($am);
         }
     }
 }
