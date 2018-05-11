@@ -211,3 +211,34 @@ string in valid JS syntax, which can be inserted into the JavaScript code to pla
 > - script filtering
 > - redirect handling
 
+### Yii JavaScript Modules <span id="javascript-modules"></span>
+
+`yii` is the root module for all Yii JavaScript modules.
+
+It implements a mechanism of organizing JavaScript code in modules through the function `yii.initModule()`.
+
+Each module should be named as "x.y.z", where "x" stands for the root module (for the Yii core code, this is "yii").
+
+A module may be structured as follows:
+
+```javascript
+window.yii.sample = (function($) {
+    var pub = {
+        // whether this module is currently active. If false, init() will not be called for this module
+        // it will also not be called for all its child modules. If this property is undefined, it means true.
+        isActive: true,
+        init: function() {
+            // ... module initialization code goes here ...
+        },
+
+        // ... other public functions and properties go here ...
+    };
+
+    // ... private functions and properties go here ...
+
+    return pub;
+})(window.jQuery);
+```
+Using this structure, you can define public and private functions/properties for a module.
+
+Private functions/properties are only visible within the module, while public functions/properties may be accessed outside of the module. For example, you can access `yii.sample.isActive`.
