@@ -242,3 +242,74 @@ window.yii.sample = (function($) {
 Using this structure, you can define public and private functions/properties for a module.
 
 Private functions/properties are only visible within the module, while public functions/properties may be accessed outside of the module. For example, you can access `yii.sample.isActive`.
+
+### CSRF param handling <span id="csrf-param-handling"></span>
+
+CSRF is an abbreviation for cross-site request forgery. The idea is that many applications assume that requests coming from a user browser are made by the user himself. It could be `false`. Read more in [Security best practices - Avoiding CSRF](security-best-practices.md#avoiding-csrf) guide.
+
+Yii root module `window.yii` provides multiple CSRF helper functions.
+
+#### Get CSRF param <span id="get-csrf-param"></span>
+
+Use `getCsrfParam()` to get the CSRF parameter name. Undefined is returned if CSRF validation is not enabled.
+
+```javascript
+window.yii.getCsrfParam(); // "_csrf"
+```
+
+#### Get CSRF token <span id="get-csrf-token"></span>
+
+Use `getCsrfToken()` to get the CSRF token. Undefined is returned if CSRF validation is not enabled.
+
+```javascript
+window.yii.getCsrfToken(); // "exampleCsrfToken=="
+```
+
+#### Set CSRF token <span id="set-csrf-token"></span>
+
+Use `setCsrfToken(name, value)` to set the CSRF token in the meta elements, where `name` is the CSRF token name and `value` is the CSRF token value. This method is provided so that you can update the CSRF token with the latest one you obtain from the server.
+
+```javascript
+window.yii.setCsrfToken(window.yii.getCsrfParam(), 'newExampleCsrfToken');
+window.yii.getCsrfToken(); // "newExampleCsrfToken"
+```
+
+#### Refresh CSRF token <span id="refresh-csrf-token"></span>
+
+Use `refreshCsrfToken()` to update all form CSRF input fields with the latest CSRF token. This method is provided to avoid cached forms containing outdated CSRF tokens.
+
+Just to demonstrate, here is an example:
+
+```javascript
+// Select login form
+var loginFormElem = jQuery('form#login-form');
+
+// Select CSRF field in login form
+var loginFormCsrfInputElem = loginFormElem
+    .find('[name="' + window.yii.getCsrfParam() + '"]');
+
+// See current CSRF token in login form
+loginFormCsrfInputElem.val(); // "exampleCsrfToken=="
+
+// Set CSRF token to new one
+window.yii.setCsrfToken(window.yii.getCsrfParam(), 'newExampleCsrfToken');
+
+// Verify that CSRF field in login form is still unchanged
+loginFormCsrfInputElem.val(); // "exampleCsrfToken=="
+
+// Refresh CSRF token for all form CSRF fields
+window.yii.refreshCsrfToken();
+
+// Verify that CSRF field in login form is now updated
+loginFormCsrfInputElem.val(); // "newExampleCsrfToken"
+```
+
+#### AJAX requests with CSRF tokens <span id="ajax-requests-with-csrf-tokens"></span>
+
+For AJAX requests vai jQuery, you don't need to make any changes to support CSRF tokens, because Yii root module automatically adds to all `jQuery.ajax()` requests CSRF token by adding `X-CSRF-Token` header via `jQuery.ajaxPrefilter()`.
+
+If you use any other library, you should set header manually.
+
+```javascript
+xhr.setRequestHeader('X-CSRF-Token', window.yii.getCsrfToken());
+```
